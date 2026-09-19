@@ -12,6 +12,13 @@ Endpoints:
 
 import os
 import sys
+
+# Đảm bảo thư mục src/ luôn nằm trong sys.path dù chạy từ project root
+# hay từ bên trong src/ (uvicorn src.api:app hoặc python api.py)
+_SRC_DIR = os.path.dirname(os.path.abspath(__file__))
+if _SRC_DIR not in sys.path:
+    sys.path.insert(0, _SRC_DIR)
+
 import uuid
 import shutil
 import tempfile
