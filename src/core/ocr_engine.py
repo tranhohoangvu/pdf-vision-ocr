@@ -7,15 +7,14 @@ from PIL import Image
 from docx import Document
 from paddleocr import PaddleOCR
 
+import sys
+
 try:
     import pymupdf as fitz
+    sys.modules['fitz'] = fitz
     HAS_PYMUPDF = True
 except ImportError:
-    try:
-        import fitz
-        HAS_PYMUPDF = True
-    except ImportError:
-        HAS_PYMUPDF = False
+    HAS_PYMUPDF = False
 
 try:
     from pdf2docx import Converter

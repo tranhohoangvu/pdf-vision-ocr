@@ -1,3 +1,10 @@
+import sys
+try:
+    import pymupdf
+    sys.modules['fitz'] = pymupdf
+except ImportError:
+    pass
+
 import os
 import tempfile
 import streamlit as st
