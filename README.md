@@ -208,21 +208,23 @@ docker compose --profile full up -d
 
 ```text
 pdf-vision-ocr/
+├── .streamlit/
+│   └── config.toml                # Cấu hình giao diện & upload Streamlit
 ├── assets/
-│   └── thumbnail.png              # Ảnh xem trước giao diện
+│   └── thumbnail.png              # Ảnh chụp giao diện ứng dụng
 ├── src/
 │   ├── core/
-│   │   ├── image_preprocessor.py  # Deskew, Shadow Removal, CLAHE
-│   │   ├── exporters.py           # Excel, Searchable PDF, Markdown, ZIP
-│   │   ├── vision_ai_engine.py    # Google Gemini Vision AI engine
-│   │   └── ocr_engine.py          # Điều phối: Digital / PaddleOCR / Gemini
-│   ├── app.py                     # Streamlit Web UI
-│   └── api.py                     # FastAPI REST Backend
-├── docker-entrypoint.sh           # Chọn chế độ web hoặc api khi start
-├── docker-compose.yml             # Orchestration profiles
-├── Dockerfile                     # Container dual-mode
-├── requirements.txt               # Python dependencies
-└── README.md
+│   │   ├── exporters.py           # Xuất DOCX, XLSX, Searchable PDF, Markdown, TXT, ZIP
+│   │   ├── image_preprocessor.py  # Deskew (xoay thẳng), khử bóng, tăng tương phản (CLAHE)
+│   │   ├── ocr_engine.py          # Bộ điều phối: Digital, PaddleOCR, Gemini Vision AI
+│   │   └── vision_ai_engine.py    # Tích hợp Google Gemini Flash Vision API
+│   ├── api.py                     # FastAPI REST API Backend
+│   └── app.py                     # Streamlit Web UI Frontend
+├── docker-compose.yml             # Docker Compose orchestration (profiles: web, api, full)
+├── docker-entrypoint.sh           # Entrypoint script chuyển đổi linh hoạt Web/API
+├── Dockerfile                     # Dockerfile dual-mode cho cả Web và API
+├── requirements.txt               # Danh sách phụ thuộc Python
+└── README.md                      # Tài liệu hướng dẫn sử dụng
 ```
 
 ---
