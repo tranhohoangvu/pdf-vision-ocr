@@ -15,3 +15,6 @@ workspace/
 # Log và model tải về của PaddleOCR
 .paddleocr/
 *.log
+
+# Kế hoạch phát triển tạm thời
+implementation_plan.md
