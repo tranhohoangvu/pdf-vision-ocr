@@ -8,15 +8,20 @@
 
 ## ✨ Tính năng nổi bật
 
-- **Nhận diện Tiếng Việt chính xác cao**: Tích hợp mô hình học sâu **PaddleOCR 2.7.3**, hỗ trợ tiếng Việt (`lang='vi'`) và tự động cân chỉnh góc xoay nghiêng (`use_angle_cls=True`).
-- **Không phụ thuộc Poppler bên ngoài**: Ứng dụng tích hợp **PyMuPDF** để render trang PDF trực tiếp trong bộ nhớ với tốc độ cao, hoạt động mượt mà trên Windows mà không cần cài đặt phần mềm ngoài.
-- **Gom đoạn thông minh (Smart Paragraph Merging)**: Tự động phân tích khoảng cách và lề của các dòng chữ để ghép thành đoạn văn hoàn chỉnh, tránh hiện tượng ngắt dòng vụn vặt khi xuất sang file Word.
-- **Giao diện trực quan & Hiện đại**:
-  - Xem trước trang tài liệu PDF trực tiếp trên web trước khi chuyển đổi.
-  - Tùy chỉnh chất lượng quét (150 DPI - Nhanh, 200 DPI - Cân bằng, 300 DPI - Sắc nét).
-  - Lựa chọn phạm vi trang linh hoạt (toàn bộ hoặc dải trang tùy chọn như `1-3, 5`).
-  - Xem trước văn bản đã trích xuất theo từng trang kèm bảng thống kê độ tin cậy (confidence score) trước khi tải file Word.
-- **Hỗ trợ đóng gói Docker**: Sẵn sàng triển khai nhanh chóng trên server chỉ với một lệnh.
+- **Bảo toàn 100% tiếng Việt có dấu & Bảng biểu**: Tự động phát hiện Digital PDF và chuyển đổi giữ nguyên cấu trúc bảng và toàn bộ dấu tiếng Việt từ tài liệu gốc.
+- **Tiền xử lý ảnh thông minh (OpenCV)**:
+  - **Tự động xoay thẳng (Auto-Deskew)**: Tự phát hiện góc nghiêng và xoay thẳng văn bản về 0°.
+  - **Khử bóng râm & Tẩy nền (Shadow Removal)**: Triệt tiêu bóng tay, bóng mờ khi chụp tài liệu bằng điện thoại.
+  - **Tăng tương phản nét chữ (CLAHE)**: Tăng độ đậm nét cho chữ mờ hoặc mực nhạt.
+- **Xuất đa định dạng (Multi-Format Export)**:
+  - 📄 **Word (.docx)**: Văn bản chuẩn, đoạn văn nối liền, phân trang chính xác.
+  - 📊 **Excel (.xlsx)**: Trích xuất bảng biểu, chia cột, định dạng lưới chuyên nghiệp (hỗ trợ sheet Tổng hợp).
+  - 🔍 **Searchable PDF (.pdf)**: Giữ nguyên ảnh scan nhưng chèn lớp chữ vô hình, cho phép `Ctrl + F` tìm kiếm và copy chữ trực tiếp.
+  - 📝 **Markdown (.md)**: Phục vụ lưu trữ nhẹ hoặc nạp dữ liệu vào các hệ thống AI/RAG.
+  - 📦 **Gói ZIP (.zip)**: Tải toàn bộ các định dạng đã chọn chỉ với 1 click.
+- **Không phụ thuộc Poppler ngoài**: Sử dụng **PyMuPDF** render trực tiếp trong RAM, tốc độ cao, không cần cấu hình PATH phức tạp.
+- **Mô hình học sâu PaddleOCR 2.7.3**: Nhận diện quang học cho tài liệu scan thuần túy.
+- **Giao diện Web Streamlit chuẩn Dark Mode**: Đồng nhất 100% font chữ công nghệ **Inter & Geist**, bố cục 2 cột trực quan.
 
 ---
 
@@ -76,8 +81,10 @@ pdf-vision-ocr/
 ├── src/
 │   ├── core/
 │   │   ├── __init__.py
-│   │   └── ocr_engine.py      # Lõi xử lý: Smart Hybrid (Digital PDF & OCR Vision)
-│   ├── app.py                 # Ứng dụng giao diện web Streamlit
+│   │   ├── image_preprocessor.py # Tiền xử lý ảnh: Deskew, khử bóng, tăng tương phản
+│   │   ├── exporters.py          # Bộ xuất: Excel (.xlsx), Searchable PDF, Markdown, ZIP
+│   │   └── ocr_engine.py         # Lõi điều phối: Smart Hybrid (Digital & OCR Vision)
+│   ├── app.py                    # Ứng dụng giao diện web Streamlit
 │   └── __init__.py
 ├── requirements.txt           # Danh sách thư viện phụ thuộc
 ├── Dockerfile                 # Đóng gói container
