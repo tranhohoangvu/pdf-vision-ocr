@@ -22,6 +22,9 @@ try:
 except ImportError:
     HAS_PDF2DOCX = False
 
+from core.image_preprocessor import ImagePreprocessor
+from core.exporters import ExcelExporter, SearchablePdfExporter, MarkdownExporter, ZipPackageExporter
+
 
 def clean_vietnamese_ocr_text(text: str) -> str:
     """
@@ -118,16 +121,23 @@ class OCREngine:
                         sample_snippets.append(txt[:120].replace("\n", " "))
                         
             doc.close()
-            # Nếu có nhiều hơn 30 ký tự văn bản, xem như PDF có text layer
             has_digital = total_chars > 30
             sample = " | ".join(sample_snippets) if sample_snippets else ""
             return has_digital, total_chars, sample
         except Exception:
             return False, 0, ""
 
-    def render_pdf_to_images(self, pdf_path: str, dpi: int = 200, page_indices: list = None, poppler_path: str = None) -> list:
+    def render_pdf_to_images(
+        self,
+        pdf_path: str,
+        dpi: int = 200,
+        page_indices: list = None,
+        deskew: bool = False,
+        remove_shadow: bool = False,
+        enhance_contrast: bool = False
+    ) -> list:
         """
-        Render các trang PDF thành danh sách ảnh PIL.Image sử dụng PyMuPDF.
+        Render các trang PDF thành danh sách ảnh PIL.Image sử dụng PyMuPDF kèm tiền xử lý OpenCV.
         """
         if not HAS_PYMUPDF:
             raise RuntimeError("Cần cài đặt thư viện pymupdf để render PDF sang ảnh.")
@@ -145,6 +155,18 @@ class OCREngine:
                 page = doc[idx]
                 pix = page.get_pixmap(matrix=mat, alpha=False)
                 img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
+
+                # Áp dụng tiền xử lý nếu được kích hoạt
+                if deskew or remove_shadow or enhance_contrast:
+                    img_np = np.array(img)
+                    processed_np, _ = ImagePreprocessor.process_pipeline(
+                        img_np,
+                        deskew=deskew,
+                        remove_shadow=remove_shadow,
+                        enhance=enhance_contrast
+                    )
+                    img = Image.fromarray(processed_np)
+
                 images.append((idx + 1, img))
         doc.close()
         return images
@@ -246,27 +268,35 @@ class OCREngine:
 
         return paragraphs
 
-    def _convert_digital_pdf(self, pdf_path: str, output_word_path: str, page_indices: list = None, progress_callback: callable = None) -> dict:
+    def _convert_digital_pdf(
+        self,
+        pdf_path: str,
+        output_dir: str,
+        base_name: str,
+        export_formats: list,
+        page_indices: list = None,
+        progress_callback: callable = None
+    ) -> dict:
         """
-        Chuyển đổi Digital PDF sang Word giữ nguyên 100% dấu tiếng Việt và bảng biểu.
+        Chuyển đổi Digital PDF sang các định dạng yêu cầu.
         """
         start_time = time.time()
         if progress_callback:
             progress_callback(0, 1, "Đang phân tích cấu trúc văn bản và bảng biểu...")
 
         pages_summary = []
-        
-        # 1. Trích xuất text blocks để preview
+        output_files = {}
+
+        # 1. Trích xuất text blocks để preview và xuất Markdown
         if HAS_PYMUPDF:
             doc = fitz.open(pdf_path)
             total_doc_pages = len(doc)
             target_indices = page_indices if page_indices is not None else list(range(total_doc_pages))
             
-            for i, idx in enumerate(target_indices):
+            for idx in target_indices:
                 if 0 <= idx < total_doc_pages:
                     page = doc[idx]
                     page_text = page.get_text("text").strip()
-                    # Chia đoạn văn
                     paras = [p.strip() for p in page_text.split("\n\n") if p.strip()]
                     if not paras and page_text:
                         paras = [line.strip() for line in page_text.split("\n") if line.strip()]
@@ -281,57 +311,106 @@ class OCREngine:
                     })
             doc.close()
 
-        # 2. Sử dụng pdf2docx để tái hiện bảng biểu và format chuẩn xác
-        if HAS_PDF2DOCX:
+        # 2. Xuất Word (.docx)
+        if "docx" in export_formats:
+            word_path = os.path.join(output_dir, f"{base_name}.docx")
             if progress_callback:
-                progress_callback(1, 2, "Đang dựng tài liệu Word với đầy đủ dấu và bảng biểu...")
-            cv = Converter(pdf_path)
-            cv.convert(output_word_path, pages=page_indices)
-            cv.close()
-        else:
-            # Fallback sang python-docx tạo text thuần
-            doc_out = Document()
-            for i, p_info in enumerate(pages_summary):
-                for p_text in p_info["paragraphs"]:
-                    doc_out.add_paragraph(p_text)
-                if i < len(pages_summary) - 1:
-                    doc_out.add_page_break()
-            doc_out.save(output_word_path)
+                progress_callback(1, 3, "Đang dựng tài liệu Word với đầy đủ dấu và bảng biểu...")
+            if HAS_PDF2DOCX:
+                cv = Converter(pdf_path)
+                cv.convert(word_path, pages=page_indices)
+                cv.close()
+            else:
+                doc_out = Document()
+                for i, p_info in enumerate(pages_summary):
+                    for p_text in p_info["paragraphs"]:
+                        doc_out.add_paragraph(p_text)
+                    if i < len(pages_summary) - 1:
+                        doc_out.add_page_break()
+                doc_out.save(word_path)
+            output_files["docx"] = word_path
+
+        # 3. Xuất Excel (.xlsx)
+        if "xlsx" in export_formats:
+            excel_path = os.path.join(output_dir, f"{base_name}.xlsx")
+            if progress_callback:
+                progress_callback(2, 3, "Đang trích xuất cấu trúc bảng biểu sang Excel...")
+            ExcelExporter.export_pdf_to_excel(pdf_path, excel_path, page_indices)
+            output_files["xlsx"] = excel_path
+
+        # 4. Xuất Markdown (.md)
+        if "md" in export_formats:
+            md_path = os.path.join(output_dir, f"{base_name}.md")
+            MarkdownExporter.export_to_markdown(pages_summary, md_path)
+            output_files["md"] = md_path
+
+        # 5. Nếu Digital PDF, bản thân nó đã searchable
+        if "pdf" in export_formats:
+            # Copy PDF gốc làm searchable pdf vì đã có text layer
+            searchable_pdf_path = os.path.join(output_dir, f"{base_name}_searchable.pdf")
+            if HAS_PYMUPDF:
+                doc = fitz.open(pdf_path)
+                if page_indices is not None:
+                    new_doc = fitz.open()
+                    for pi in page_indices:
+                        if 0 <= pi < len(doc):
+                            new_doc.insert_pdf(doc, from_page=pi, to_page=pi)
+                    new_doc.save(searchable_pdf_path)
+                    new_doc.close()
+                else:
+                    doc.save(searchable_pdf_path)
+                doc.close()
+                output_files["pdf"] = searchable_pdf_path
+
+        # 6. Đóng gói ZIP nếu có nhiều hơn 1 định dạng
+        if len(output_files) > 1:
+            zip_path = os.path.join(output_dir, f"{base_name}_bundle.zip")
+            files_to_zip = {os.path.basename(p): p for p in output_files.values()}
+            ZipPackageExporter.create_zip_archive(files_to_zip, zip_path)
+            output_files["zip"] = zip_path
 
         elapsed = round(time.time() - start_time, 2)
+        primary_word_path = output_files.get("docx", "")
         return {
             "success": True,
             "mode_used": "digital",
             "total_pages_processed": len(pages_summary),
             "overall_confidence": 100.0,
             "elapsed_seconds": elapsed,
-            "output_word_path": output_word_path,
+            "output_word_path": primary_word_path,
+            "output_files": output_files,
             "pages": pages_summary
         }
 
     def _convert_scanned_pdf(
         self,
         pdf_path: str,
-        output_word_path: str,
+        output_dir: str,
+        base_name: str,
+        export_formats: list,
         dpi: int = 200,
         page_indices: list = None,
         merge_paragraphs: bool = True,
-        poppler_path: str = None,
+        deskew: bool = False,
+        remove_shadow: bool = False,
+        enhance_contrast: bool = False,
         progress_callback: callable = None
     ) -> dict:
         """
-        Chuyển đổi PDF dạng ảnh scan sang Word bằng mô hình PaddleOCR Vision.
+        Chuyển đổi PDF dạng ảnh scan sang Word & các định dạng khác bằng PaddleOCR Vision.
         """
         start_time = time.time()
         
         if progress_callback:
-            progress_callback(0, 1, "Đang trích xuất các trang PDF sang ảnh...")
+            progress_callback(0, 1, "Đang trích xuất & tiền xử lý các trang PDF sang ảnh...")
             
         page_images = self.render_pdf_to_images(
             pdf_path=pdf_path,
             dpi=dpi,
             page_indices=page_indices,
-            poppler_path=poppler_path
+            deskew=deskew,
+            remove_shadow=remove_shadow,
+            enhance_contrast=enhance_contrast
         )
         
         total_pages = len(page_images)
@@ -341,6 +420,7 @@ class OCREngine:
         doc = Document()
         pages_summary = []
         all_confidences = []
+        raw_ocr_pages = []
 
         for i, (page_num, img) in enumerate(page_images):
             if progress_callback:
@@ -357,6 +437,8 @@ class OCREngine:
                     page_lines.append(line)
                     page_confs.append(float(line[1][1]))
                     all_confidences.append(float(line[1][1]))
+
+            raw_ocr_pages.append((page_num, page_lines))
 
             if merge_paragraphs:
                 paragraphs = self.merge_lines_into_paragraphs(page_lines)
@@ -378,9 +460,47 @@ class OCREngine:
                 "paragraphs": paragraphs
             })
 
-        doc.save(output_word_path)
+        output_files = {}
+
+        # Lưu file Word (.docx)
+        if "docx" in export_formats:
+            word_path = os.path.join(output_dir, f"{base_name}.docx")
+            doc.save(word_path)
+            output_files["docx"] = word_path
+
+        # Xuất Searchable PDF (.pdf)
+        if "pdf" in export_formats and HAS_PYMUPDF:
+            searchable_pdf_path = os.path.join(output_dir, f"{base_name}_searchable.pdf")
+            SearchablePdfExporter.create_searchable_pdf(
+                pdf_path=pdf_path,
+                output_pdf_path=searchable_pdf_path,
+                ocr_results_per_page=raw_ocr_pages,
+                page_indices=page_indices
+            )
+            output_files["pdf"] = searchable_pdf_path
+
+        # Xuất Excel (.xlsx)
+        if "xlsx" in export_formats:
+            excel_path = os.path.join(output_dir, f"{base_name}.xlsx")
+            ExcelExporter.export_pdf_to_excel(pdf_path, excel_path, page_indices)
+            output_files["xlsx"] = excel_path
+
+        # Xuất Markdown (.md)
+        if "md" in export_formats:
+            md_path = os.path.join(output_dir, f"{base_name}.md")
+            MarkdownExporter.export_to_markdown(pages_summary, md_path)
+            output_files["md"] = md_path
+
+        # Đóng gói ZIP nếu nhiều định dạng
+        if len(output_files) > 1:
+            zip_path = os.path.join(output_dir, f"{base_name}_bundle.zip")
+            files_to_zip = {os.path.basename(p): p for p in output_files.values()}
+            ZipPackageExporter.create_zip_archive(files_to_zip, zip_path)
+            output_files["zip"] = zip_path
+
         elapsed = round(time.time() - start_time, 2)
         overall_conf = round((sum(all_confidences) / len(all_confidences) * 100), 1) if all_confidences else 0.0
+        primary_word_path = output_files.get("docx", "")
 
         return {
             "success": True,
@@ -388,7 +508,8 @@ class OCREngine:
             "total_pages_processed": total_pages,
             "overall_confidence": overall_conf,
             "elapsed_seconds": elapsed,
-            "output_word_path": output_word_path,
+            "output_word_path": primary_word_path,
+            "output_files": output_files,
             "pages": pages_summary
         }
 
@@ -400,50 +521,69 @@ class OCREngine:
         dpi: int = 200,
         page_indices: list = None,
         merge_paragraphs: bool = True,
-        poppler_path: str = None,
+        export_formats: list = None,
+        deskew: bool = False,
+        remove_shadow: bool = False,
+        enhance_contrast: bool = False,
         progress_callback: callable = None,
         **kwargs
     ) -> dict:
         """
-        Hàm chính điều phối chuyển đổi PDF sang Word theo chế độ:
-        :param mode: 'auto' (Tự động phát hiện), 'digital' (Văn bản số & Bảng biểu), 'ocr' (Thuần quét ảnh OCR)
+        Hàm chính điều phối chuyển đổi PDF sang Word và các định dạng khác theo yêu cầu.
         """
+        if export_formats is None:
+            export_formats = ["docx"]
+
+        output_dir = os.path.dirname(output_word_path) or "."
+        base_name = os.path.splitext(os.path.basename(output_word_path))[0]
+
         # Kiểm tra sự tồn tại của text layer
         has_digital, char_count, _ = self.check_has_digital_text(pdf_path, page_indices)
 
         if mode == "auto":
-            # Nếu có văn bản số với lượng chữ đáng kể -> dùng digital mode (giữ 100% dấu & bảng biểu)
             if has_digital and HAS_PDF2DOCX:
                 return self._convert_digital_pdf(
                     pdf_path=pdf_path,
-                    output_word_path=output_word_path,
+                    output_dir=output_dir,
+                    base_name=base_name,
+                    export_formats=export_formats,
                     page_indices=page_indices,
                     progress_callback=progress_callback
                 )
             else:
                 return self._convert_scanned_pdf(
                     pdf_path=pdf_path,
-                    output_word_path=output_word_path,
+                    output_dir=output_dir,
+                    base_name=base_name,
+                    export_formats=export_formats,
                     dpi=dpi,
                     page_indices=page_indices,
                     merge_paragraphs=merge_paragraphs,
-                    poppler_path=poppler_path,
+                    deskew=deskew,
+                    remove_shadow=remove_shadow,
+                    enhance_contrast=enhance_contrast,
                     progress_callback=progress_callback
                 )
         elif mode == "digital":
             return self._convert_digital_pdf(
                 pdf_path=pdf_path,
-                output_word_path=output_word_path,
+                output_dir=output_dir,
+                base_name=base_name,
+                export_formats=export_formats,
                 page_indices=page_indices,
                 progress_callback=progress_callback
             )
         else:  # mode == "ocr"
             return self._convert_scanned_pdf(
                 pdf_path=pdf_path,
-                output_word_path=output_word_path,
+                output_dir=output_dir,
+                base_name=base_name,
+                export_formats=export_formats,
                 dpi=dpi,
                 page_indices=page_indices,
                 merge_paragraphs=merge_paragraphs,
-                poppler_path=poppler_path,
+                deskew=deskew,
+                remove_shadow=remove_shadow,
+                enhance_contrast=enhance_contrast,
                 progress_callback=progress_callback
             )
