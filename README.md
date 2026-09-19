@@ -9,6 +9,7 @@
 ## ✨ Tính năng nổi bật
 
 - **Bảo toàn 100% tiếng Việt có dấu & Bảng biểu**: Tự động phát hiện Digital PDF và chuyển đổi giữ nguyên cấu trúc bảng và toàn bộ dấu tiếng Việt từ tài liệu gốc.
+- **Xử lý hàng loạt (Batch Processing & Master ZIP)**: Tải lên nhiều file PDF cùng lúc, tự động xử lý tuần tự, cung cấp bảng thống kê chi tiết từng file và đóng gói toàn bộ kết quả vào một file Master ZIP có cấu trúc thư mục rõ ràng kèm báo cáo tổng kết (`batch_summary.txt`).
 - **Tiền xử lý ảnh thông minh (OpenCV)**:
   - **Tự động xoay thẳng (Auto-Deskew)**: Tự phát hiện góc nghiêng và xoay thẳng văn bản về 0°.
   - **Khử bóng râm & Tẩy nền (Shadow Removal)**: Triệt tiêu bóng tay, bóng mờ khi chụp tài liệu bằng điện thoại.
@@ -21,7 +22,7 @@
   - 📦 **Gói ZIP (.zip)**: Tải toàn bộ các định dạng đã chọn chỉ với 1 click.
 - **Không phụ thuộc Poppler ngoài**: Sử dụng **PyMuPDF** render trực tiếp trong RAM, tốc độ cao, không cần cấu hình PATH phức tạp.
 - **Mô hình học sâu PaddleOCR 2.7.3**: Nhận diện quang học cho tài liệu scan thuần túy.
-- **Giao diện Web Streamlit chuẩn Dark Mode**: Đồng nhất 100% font chữ công nghệ **Inter & Geist**, bố cục 2 cột trực quan.
+- **Giao diện Web Streamlit chuẩn Dark Mode**: Đồng nhất 100% font chữ công nghệ **Inter & Geist**, bố cục 2 cột trực quan, lưu phiên làm việc mượt mà không bị tải lại khi tải file.
 
 ---
 

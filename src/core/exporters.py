@@ -219,3 +219,25 @@ class ZipPackageExporter:
                 if os.path.exists(filepath):
                     zipf.write(filepath, arcname=arcname)
         return True
+
+    @staticmethod
+    def create_batch_archive(batch_file_maps: list, output_zip_path: str, summary_content: str = "") -> bool:
+        """
+        batch_file_maps: list of dicts:
+          [
+            {"folder_name": "tailieu_1", "files": {"tailieu_1.docx": "/path/to/tailieu_1.docx", ...}},
+            ...
+          ]
+        """
+        with zipfile.ZipFile(output_zip_path, "w", zipfile.ZIP_DEFLATED) as zipf:
+            for item in batch_file_maps:
+                folder = item.get("folder_name", "")
+                files = item.get("files", {})
+                for fname, fpath in files.items():
+                    if os.path.exists(fpath):
+                        arc = f"{folder}/{fname}" if folder else fname
+                        zipf.write(fpath, arcname=arc)
+            
+            if summary_content:
+                zipf.writestr("batch_summary.txt", summary_content)
+        return True

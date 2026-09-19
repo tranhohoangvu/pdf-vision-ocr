@@ -1,5 +1,7 @@
 import os
 import sys
+import time
+from datetime import datetime
 
 os.environ["PYMUPDF_SUGGEST_LAYOUT_ANALYZER"] = "0"
 
@@ -10,13 +12,17 @@ try:
         pymupdf.no_recommend_layout()
 except ImportError:
     pass
+
 import tempfile
 import streamlit as st
 import pandas as pd
 import importlib
 import core.ocr_engine
+import core.exporters
 importlib.reload(core.ocr_engine)
+importlib.reload(core.exporters)
 from core.ocr_engine import OCREngine, HAS_PYMUPDF, HAS_PDF2DOCX
+from core.exporters import ZipPackageExporter
 
 # Cấu hình giao diện
 st.set_page_config(
@@ -89,6 +95,11 @@ st.markdown("""
         border: 1px solid rgba(59, 130, 246, 0.3);
         color: #60A5FA;
     }
+    .alert-batch {
+        background: rgba(139, 92, 246, 0.12);
+        border: 1px solid rgba(139, 92, 246, 0.3);
+        color: #C084FC;
+    }
 
     /* Thẻ thống kê KPI */
     .kpi-container {
@@ -96,6 +107,17 @@ st.markdown("""
         grid-template-columns: repeat(3, 1fr);
         gap: 1rem;
         margin: 1.2rem 0;
+    }
+    .kpi-container-4 {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 1rem;
+        margin: 1.2rem 0;
+    }
+    @media (max-width: 768px) {
+        .kpi-container-4 {
+            grid-template-columns: repeat(2, 1fr);
+        }
     }
     .kpi-card {
         background: #111827;
@@ -218,7 +240,7 @@ with st.sidebar:
     )
     
     page_mode = st.radio(
-        "Phạm vi trang:",
+        "Phạm vi trang (áp dụng file đơn):",
         options=["Tất cả", "Trang chỉ định"],
         index=0
     )
@@ -231,6 +253,27 @@ with st.sidebar:
         )
 
     st.markdown("---")
+    with st.expander("✨ Vision AI (Google Gemini)", expanded=False):
+        gemini_api_key = st.text_input(
+            "Gemini API Key:",
+            type="password",
+            placeholder="AIzaSy...",
+            help="Cung cấp API Key để xử lý chữ viết tay & tài liệu siêu khó (Giai đoạn tiếp theo)."
+        )
+        st.markdown("[🔑 Lấy Google Gemini API Key miễn phí](https://aistudio.google.com/app/apikey)")
+        if gemini_api_key:
+            st.success("🟢 Đã nạp Gemini Key (Sẵn sàng)")
+        else:
+            st.caption("Chế độ hiện tại: Offline Local Engine (PaddleOCR & PyMuPDF)")
+
+    st.markdown("---")
+    if st.button("🔄 Đặt lại toàn bộ (Reset)", use_container_width=True, help="Xóa mọi tệp tải lên và làm mới trạng thái"):
+        st.session_state["uploader_key"] = st.session_state.get("uploader_key", 0) + 1
+        st.session_state["single_result"] = None
+        st.session_state["batch_results"] = None
+        st.session_state["last_uploaded_keys"] = []
+        st.rerun()
+
     st.caption("⚡ **Render:** PyMuPDF | 📊 **Excel:** openpyxl")
     st.caption("🤖 **OCR:** PaddleOCR 2.7.3")
 
@@ -238,16 +281,50 @@ with st.sidebar:
 st.markdown("""
 <div class="app-header">
     <h1 class="app-title">⚡ PDF Vision <span>OCR & Multi-Export</span></h1>
-    <div class="app-desc">Bảo toàn 100% tiếng Việt có dấu, phục hồi nguyên vẹn bảng biểu sang Word, Excel, Searchable PDF và Markdown.</div>
+    <div class="app-desc">Bảo toàn 100% tiếng Việt có dấu, phục hồi nguyên vẹn bảng biểu sang Word, Excel, Searchable PDF và Markdown. Hỗ trợ xử lý hàng loạt.</div>
 </div>
 """, unsafe_allow_html=True)
 
-uploaded_file = st.file_uploader(
-    "Chọn hoặc kéo thả file PDF vào đây",
-    type=["pdf"]
+# Khung tải tệp (cho phép chọn nhiều file)
+uploader_key = f"uploader_{st.session_state.get('uploader_key', 0)}"
+uploaded_files = st.file_uploader(
+    "Chọn hoặc kéo thả một hoặc nhiều file PDF vào đây (Batch Upload):",
+    type=["pdf"],
+    accept_multiple_files=True,
+    key=uploader_key
 )
 
-if uploaded_file is not None:
+# Kiểm tra thay đổi tệp để reset session state
+if uploaded_files:
+    current_keys = [f"{f.name}_{f.size}" for f in uploaded_files]
+    if st.session_state.get("last_uploaded_keys") != current_keys:
+        st.session_state["last_uploaded_keys"] = current_keys
+        st.session_state["single_result"] = None
+        st.session_state["batch_results"] = None
+else:
+    st.session_state["last_uploaded_keys"] = []
+    st.session_state["single_result"] = None
+    st.session_state["batch_results"] = None
+
+# Nếu chưa có file nào
+if not uploaded_files:
+    st.markdown("""
+    <div style="background: rgba(17, 24, 39, 0.6); border: 1px dashed rgba(255, 255, 255, 0.15); border-radius: 12px; padding: 2.5rem 1.5rem; text-align: center; margin-top: 1rem;">
+        <div style="font-size: 2.5rem; margin-bottom: 0.6rem;">📄 ➔ 📊 📄 🔍 📝</div>
+        <h3 style="color: #F8FAFC; margin-bottom: 0.4rem; font-weight: 700;">Chưa có tài liệu nào được chọn</h3>
+        <p style="color: #94A3B8; font-size: 0.95rem; max-width: 620px; margin: 0 auto; line-height: 1.6;">
+            Bạn có thể tải lên <b>1 file đơn lẻ</b> hoặc <b>nhiều file PDF cùng lúc</b> (Batch Processing).<br>
+            Hệ thống sẽ tự động phân tích cấu trúc, giữ 100% dấu tiếng Việt và xuất sang các định dạng bạn cần.
+        </p>
+    </div>
+    """, unsafe_allow_html=True)
+
+# -------------------------------------------------------------
+# CASE 1: XỬ LÝ 1 FILE DUY NHẤT (GIAO DIỆN CHUYÊN SÂU 2 CỘT)
+# -------------------------------------------------------------
+elif len(uploaded_files) == 1:
+    uploaded_file = uploaded_files[0]
+    
     with tempfile.TemporaryDirectory() as temp_dir:
         input_pdf_path = os.path.join(temp_dir, "uploaded.pdf")
         output_docx_path = os.path.join(temp_dir, "result.docx")
@@ -329,8 +406,17 @@ if uploaded_file is not None:
             format_labels = [f".{fmt.upper()}" for fmt in selected_formats]
             st.info(f"Định dạng xuất: **{', '.join(format_labels)}**")
 
-            # Nút bấm chuyển đổi
-            start_btn = st.button("🚀 Bắt đầu chuyển đổi ngay", type="primary", use_container_width=True)
+            # Nút bấm chuyển đổi & Đặt lại
+            col_b1, col_b2 = st.columns([3, 1])
+            with col_b1:
+                start_btn = st.button("🚀 Bắt đầu chuyển đổi ngay", type="primary", use_container_width=True)
+            with col_b2:
+                if st.button("🔄 Đặt lại", use_container_width=True, help="Hủy bỏ file và làm mới"):
+                    st.session_state["uploader_key"] = st.session_state.get("uploader_key", 0) + 1
+                    st.session_state["single_result"] = None
+                    st.session_state["batch_results"] = None
+                    st.session_state["last_uploaded_keys"] = []
+                    st.rerun()
 
             if start_btn:
                 progress_bar = st.progress(0)
@@ -357,114 +443,429 @@ if uploaded_file is not None:
                             progress_callback=on_progress
                         )
                         
+                        # Đọc bytes vào RAM để lưu vào session state
+                        exported_bytes = {}
+                        for fmt, fpath in result.get("output_files", {}).items():
+                            if os.path.exists(fpath):
+                                with open(fpath, "rb") as rf:
+                                    exported_bytes[fmt] = rf.read()
+                        result["file_bytes"] = exported_bytes
+                        result["base_name"] = uploaded_file.name.rsplit(".", 1)[0]
+                        st.session_state["single_result"] = result
+
                         status_placeholder.empty()
                         progress_bar.progress(1.0)
-                        
-                        mode_title = "Trích xuất số (100% có dấu & giữ bảng)" if result.get("mode_used") == "digital" else "PaddleOCR Vision"
-                        st.success(f"🎉 **Hoàn thành!** Phương thức: {mode_title}")
-
-                        # Thẻ KPI
-                        st.markdown(f"""
-                        <div class="kpi-container">
-                            <div class="kpi-card">
-                                <div class="kpi-num">{result['total_pages_processed']}</div>
-                                <div class="kpi-title">Trang xử lý</div>
-                            </div>
-                            <div class="kpi-card">
-                                <div class="kpi-num">{result['overall_confidence']}%</div>
-                                <div class="kpi-title">Độ tin cậy</div>
-                            </div>
-                            <div class="kpi-card">
-                                <div class="kpi-num">{result['elapsed_seconds']}s</div>
-                                <div class="kpi-title">Thời gian</div>
-                            </div>
-                        </div>
-                        """, unsafe_allow_html=True)
-
-                        # KHU VỰC TẢI XUỐNG CÁC ĐỊNH DẠNG
-                        st.markdown("##### 📥 Tải xuống kết quả:")
-                        output_files = result.get("output_files", {})
-                        base_file_name = uploaded_file.name.rsplit(".", 1)[0]
-
-                        # Nút tải gói ZIP nếu có nhiều file
-                        if "zip" in output_files and os.path.exists(output_files["zip"]):
-                            with open(output_files["zip"], "rb") as zf:
-                                st.download_button(
-                                    label="📦 TẢI TRỌN BỘ TẤT CẢ ĐỊNH DẠNG (.ZIP)",
-                                    data=zf.read(),
-                                    file_name=f"{base_file_name}_bundle.zip",
-                                    mime="application/zip",
-                                    type="primary",
-                                    use_container_width=True
-                                )
-                            st.markdown("<br>", unsafe_allow_html=True)
-
-                        # Các nút tải riêng theo định dạng
-                        dl_col1, dl_col2 = st.columns(2)
-                        
-                        if "docx" in output_files and os.path.exists(output_files["docx"]):
-                            with open(output_files["docx"], "rb") as f:
-                                dl_col1.download_button(
-                                    label="📄 Tải file Word (.docx)",
-                                    data=f.read(),
-                                    file_name=f"{base_file_name}.docx",
-                                    mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-                                    use_container_width=True
-                                )
-
-                        if "xlsx" in output_files and os.path.exists(output_files["xlsx"]):
-                            with open(output_files["xlsx"], "rb") as f:
-                                dl_col2.download_button(
-                                    label="📊 Tải bảng tính Excel (.xlsx)",
-                                    data=f.read(),
-                                    file_name=f"{base_file_name}.xlsx",
-                                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                                    use_container_width=True
-                                )
-
-                        if "pdf" in output_files and os.path.exists(output_files["pdf"]):
-                            with open(output_files["pdf"], "rb") as f:
-                                dl_col1.download_button(
-                                    label="🔍 Tải Searchable PDF (.pdf)",
-                                    data=f.read(),
-                                    file_name=f"{base_file_name}_searchable.pdf",
-                                    mime="application/pdf",
-                                    use_container_width=True
-                                )
-
-                        if "md" in output_files and os.path.exists(output_files["md"]):
-                            with open(output_files["md"], "rb") as f:
-                                dl_col2.download_button(
-                                    label="📝 Tải tài liệu Markdown (.md)",
-                                    data=f.read(),
-                                    file_name=f"{base_file_name}.md",
-                                    mime="text/markdown",
-                                    use_container_width=True
-                                )
-
-                        # Tabs xem trước nội dung
-                        tab_text, tab_meta = st.tabs(["📝 Xem trước văn bản", "📊 Chi tiết trang"])
-
-                        with tab_text:
-                            for page in result["pages"]:
-                                page_txt = "\n\n".join(page["paragraphs"])
-                                with st.expander(f"📄 Trang {page['page_num']} ({len(page['paragraphs'])} đoạn, độ tin cậy {page['avg_confidence']}%)", expanded=True):
-                                    st.text_area(
-                                        f"Nội dung trang {page['page_num']}",
-                                        value=page_txt if page_txt else "(Không tìm thấy văn bản)",
-                                        height=180,
-                                        key=f"text_page_{page['page_num']}"
-                                    )
-
-                        with tab_meta:
-                            df_stats = pd.DataFrame([{
-                                "Trang": f"Trang {p['page_num']}",
-                                "Số dòng": p["line_count"],
-                                "Số đoạn": p["paragraph_count"],
-                                "Độ tin cậy": f"{p['avg_confidence']}%"
-                            } for p in result["pages"]])
-                            st.dataframe(df_stats, use_container_width=True)
-
                     except Exception as e:
                         status_placeholder.empty()
                         st.error(f"❌ Có lỗi xảy ra trong quá trình xử lý: {str(e)}")
+
+            # Hiển thị kết quả từ session state
+            saved_result = st.session_state.get("single_result")
+            if saved_result:
+                mode_title = "Trích xuất số (100% có dấu & giữ bảng)" if saved_result.get("mode_used") == "digital" else "PaddleOCR Vision"
+                st.success(f"🎉 **Hoàn thành!** Phương thức: {mode_title}")
+
+                # Thẻ KPI
+                st.markdown(f"""
+                <div class="kpi-container">
+                    <div class="kpi-card">
+                        <div class="kpi-num">{saved_result['total_pages_processed']}</div>
+                        <div class="kpi-title">Trang xử lý</div>
+                    </div>
+                    <div class="kpi-card">
+                        <div class="kpi-num">{saved_result['overall_confidence']}%</div>
+                        <div class="kpi-title">Độ tin cậy</div>
+                    </div>
+                    <div class="kpi-card">
+                        <div class="kpi-num">{saved_result['elapsed_seconds']}s</div>
+                        <div class="kpi-title">Thời gian</div>
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+
+                # KHU VỰC TẢI XUỐNG CÁC ĐỊNH DẠNG
+                st.markdown("##### 📥 Tải xuống kết quả:")
+                file_bytes = saved_result.get("file_bytes", {})
+                base_name = saved_result.get("base_name", "converted_document")
+
+                # Nút tải gói ZIP nếu có nhiều file
+                if "zip" in file_bytes:
+                    st.download_button(
+                        label="📦 TẢI TRỌN BỘ TẤT CẢ ĐỊNH DẠNG (.ZIP)",
+                        data=file_bytes["zip"],
+                        file_name=f"{base_name}_bundle.zip",
+                        mime="application/zip",
+                        type="primary",
+                        use_container_width=True
+                    )
+                    st.markdown("<br>", unsafe_allow_html=True)
+
+                # Các nút tải riêng theo định dạng
+                dl_col1, dl_col2 = st.columns(2)
+                
+                if "docx" in file_bytes:
+                    dl_col1.download_button(
+                        label="📄 Tải file Word (.docx)",
+                        data=file_bytes["docx"],
+                        file_name=f"{base_name}.docx",
+                        mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                        use_container_width=True
+                    )
+
+                if "xlsx" in file_bytes:
+                    dl_col2.download_button(
+                        label="📊 Tải bảng tính Excel (.xlsx)",
+                        data=file_bytes["xlsx"],
+                        file_name=f"{base_name}.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        use_container_width=True
+                    )
+
+                if "pdf" in file_bytes:
+                    dl_col1.download_button(
+                        label="🔍 Tải Searchable PDF (.pdf)",
+                        data=file_bytes["pdf"],
+                        file_name=f"{base_name}_searchable.pdf",
+                        mime="application/pdf",
+                        use_container_width=True
+                    )
+
+                if "md" in file_bytes:
+                    dl_col2.download_button(
+                        label="📝 Tải tài liệu Markdown (.md)",
+                        data=file_bytes["md"],
+                        file_name=f"{base_name}.md",
+                        mime="text/markdown",
+                        use_container_width=True
+                    )
+
+                # Tabs xem trước nội dung
+                tab_text, tab_meta = st.tabs(["📝 Xem trước văn bản", "📊 Chi tiết trang"])
+
+                with tab_text:
+                    for page in saved_result.get("pages", []):
+                        page_txt = "\n\n".join(page.get("paragraphs", []))
+                        with st.expander(f"📄 Trang {page['page_num']} ({len(page.get('paragraphs', []))} đoạn, độ tin cậy {page.get('avg_confidence', 0)}%)", expanded=True):
+                            st.text_area(
+                                f"Nội dung trang {page['page_num']}",
+                                value=page_txt if page_txt else "(Không tìm thấy văn bản)",
+                                height=180,
+                                key=f"text_page_{page['page_num']}"
+                            )
+
+                with tab_meta:
+                    df_stats = pd.DataFrame([{
+                        "Trang": f"Trang {p['page_num']}",
+                        "Số dòng": p.get("line_count", 0),
+                        "Số đoạn": p.get("paragraph_count", 0),
+                        "Độ tin cậy": f"{p.get('avg_confidence', 0)}%"
+                    } for p in saved_result.get("pages", [])])
+                    st.dataframe(df_stats, use_container_width=True)
+
+# -------------------------------------------------------------
+# CASE 2: XỬ LÝ HÀNG LOẠT (BATCH PROCESSING MULTIPLE FILES)
+# -------------------------------------------------------------
+else:
+    total_batch_files = len(uploaded_files)
+    total_batch_size_mb = sum(len(f.getbuffer()) for f in uploaded_files) / (1024 * 1024)
+    
+    st.markdown(f"""
+    <div class="alert-box alert-batch">
+        <span style="font-size: 1.4rem;">📦</span>
+        <div>
+            <strong>Chế độ xử lý hàng loạt (Batch Mode):</strong> Đã chọn <strong>{total_batch_files} tệp PDF</strong> 
+            (Tổng dung lượng: {total_batch_size_mb:.2f} MB).
+            Hệ thống sẽ xử lý tuần tự từng tài liệu và tự động đóng gói Master ZIP trọn bộ.
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    col_batch_info, col_batch_run = st.columns([1, 1], gap="medium")
+
+    with col_batch_info:
+        st.markdown("##### 🔍 Kiểm tra & Xem trước tệp trong danh sách")
+        
+        selected_inspect_idx = st.selectbox(
+            "Chọn file cần xem trước:",
+            options=list(range(total_batch_files)),
+            format_func=lambda i: f"#{i+1}: {uploaded_files[i].name} ({round(len(uploaded_files[i].getbuffer()) / 1024, 1)} KB)"
+        )
+        
+        inspect_file = uploaded_files[selected_inspect_idx]
+        with tempfile.TemporaryDirectory() as inspect_dir:
+            temp_inspect_path = os.path.join(inspect_dir, "inspect.pdf")
+            with open(temp_inspect_path, "wb") as f:
+                f.write(inspect_file.getbuffer())
+            
+            file_page_count = OCREngine.get_pdf_page_count(temp_inspect_path)
+            is_dig, char_cnt, _ = OCREngine.check_has_digital_text(temp_inspect_path, [0])
+
+            badge_text = "🟢 Digital PDF (100% tiếng Việt)" if is_dig else "🔵 Scanned Image (Cần OCR)"
+            st.caption(f"**Trạng thái:** {badge_text} | **Số trang:** {file_page_count} trang")
+
+            insp_imgs = engine.render_pdf_to_images(
+                pdf_path=temp_inspect_path,
+                dpi=100,
+                page_indices=[0],
+                deskew=deskew,
+                remove_shadow=remove_shadow,
+                enhance_contrast=enhance_contrast
+            )
+            if insp_imgs:
+                st.image(insp_imgs[0][1], caption=f"Trang 1 của {inspect_file.name}", use_column_width=True)
+
+    with col_batch_run:
+        st.markdown("##### 🚀 Cấu hình & Chạy hàng loạt")
+        
+        format_labels = [f".{fmt.upper()}" for fmt in selected_formats]
+        st.info(f"Định dạng xuất cho mỗi file: **{', '.join(format_labels)}**")
+
+        batch_scope = st.radio(
+            "Phạm vi trang xử lý:",
+            options=["all_pages", "first_page_only"],
+            format_func=lambda x: "Tất cả các trang của mỗi file" if x == "all_pages" else "Chỉ trang đầu tiên (Kiểm tra tốc độ nhanh)",
+            index=0
+        )
+
+        col_bb1, col_bb2 = st.columns([3, 1])
+        with col_bb1:
+            batch_start_btn = st.button(
+                f"🚀 Bắt đầu chuyển đổi hàng loạt ({total_batch_files} file)",
+                type="primary",
+                use_container_width=True
+            )
+        with col_bb2:
+            if st.button("🔄 Đặt lại", key="batch_reset_btn", use_container_width=True, help="Hủy danh sách file và làm mới"):
+                st.session_state["uploader_key"] = st.session_state.get("uploader_key", 0) + 1
+                st.session_state["single_result"] = None
+                st.session_state["batch_results"] = None
+                st.session_state["last_uploaded_keys"] = []
+                st.rerun()
+
+        if batch_start_btn:
+            batch_progress_bar = st.progress(0)
+            batch_status_placeholder = st.empty()
+            
+            batch_results_list = []
+            batch_file_maps = []
+            overall_start_time = time.time()
+
+            with tempfile.TemporaryDirectory() as master_temp_dir:
+                for idx, u_file in enumerate(uploaded_files):
+                    file_name = u_file.name
+                    base_name = file_name.rsplit(".", 1)[0]
+                    batch_status_placeholder.info(f"⏳ Đang xử lý file {idx + 1}/{total_batch_files}: **{file_name}**...")
+                    
+                    file_input_pdf = os.path.join(master_temp_dir, f"in_{idx}.pdf")
+                    file_out_docx = os.path.join(master_temp_dir, f"{base_name}.docx")
+                    
+                    with open(file_input_pdf, "wb") as f:
+                        f.write(u_file.getbuffer())
+
+                    total_pgs = OCREngine.get_pdf_page_count(file_input_pdf)
+                    target_indices = [0] if batch_scope == "first_page_only" else list(range(total_pgs))
+
+                    try:
+                        f_result = engine.convert_pdf_to_word(
+                            pdf_path=file_input_pdf,
+                            output_word_path=file_out_docx,
+                            mode=conversion_mode,
+                            dpi=dpi_option,
+                            page_indices=target_indices,
+                            merge_paragraphs=merge_paragraphs,
+                            export_formats=selected_formats,
+                            deskew=deskew,
+                            remove_shadow=remove_shadow,
+                            enhance_contrast=enhance_contrast,
+                            progress_callback=None
+                        )
+
+                        # Lưu file bytes
+                        file_bytes_map = {}
+                        archive_subfolder_files = {}
+                        
+                        for fmt, fpath in f_result.get("output_files", {}).items():
+                            if os.path.exists(fpath):
+                                with open(fpath, "rb") as rf:
+                                    content = rf.read()
+                                    file_bytes_map[fmt] = content
+                                if fmt != "zip":
+                                    archive_subfolder_files[os.path.basename(fpath)] = fpath
+
+                        batch_file_maps.append({
+                            "folder_name": base_name,
+                            "files": archive_subfolder_files
+                        })
+
+                        batch_results_list.append({
+                            "name": file_name,
+                            "base_name": base_name,
+                            "size_kb": round(len(u_file.getbuffer()) / 1024, 1),
+                            "pages_processed": len(target_indices),
+                            "mode_used": f_result.get("mode_used", "unknown"),
+                            "confidence": f_result.get("overall_confidence", 0),
+                            "elapsed": f_result.get("elapsed_seconds", 0),
+                            "file_bytes": file_bytes_map,
+                            "pages": f_result.get("pages", []),
+                            "status": "Thành công"
+                        })
+                    except Exception as err:
+                        batch_results_list.append({
+                            "name": file_name,
+                            "base_name": base_name,
+                            "size_kb": round(len(u_file.getbuffer()) / 1024, 1),
+                            "pages_processed": 0,
+                            "mode_used": "error",
+                            "confidence": 0,
+                            "elapsed": 0,
+                            "file_bytes": {},
+                            "pages": [],
+                            "status": f"Lỗi: {str(err)}"
+                        })
+
+                    batch_progress_bar.progress((idx + 1) / total_batch_files)
+
+                # Tạo Master ZIP
+                master_zip_path = os.path.join(master_temp_dir, "master_batch.zip")
+                summary_report = f"BÁO CÁO XỬ LÝ HÀNG LOẠT (PDF VISION OCR)\n"
+                summary_report += f"Thời gian thực hiện: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
+                summary_report += f"Tổng số file: {total_batch_files}\n"
+                summary_report += f"Các định dạng xuất: {', '.join(selected_formats)}\n\n"
+                for res in batch_results_list:
+                    summary_report += f"- {res['name']}: {res['status']} | Số trang: {res['pages_processed']} | Mode: {res['mode_used']} | Độ tin cậy: {res['confidence']}%\n"
+
+                ZipPackageExporter.create_batch_archive(batch_file_maps, master_zip_path, summary_report)
+                
+                master_zip_bytes = b""
+                if os.path.exists(master_zip_path):
+                    with open(master_zip_path, "rb") as zf:
+                        master_zip_bytes = zf.read()
+
+                batch_total_time = round(time.time() - overall_start_time, 2)
+                st.session_state["batch_results"] = {
+                    "results": batch_results_list,
+                    "master_zip_bytes": master_zip_bytes,
+                    "total_time": batch_total_time
+                }
+
+                batch_status_placeholder.empty()
+                batch_progress_bar.progress(1.0)
+
+    # Hiển thị kết quả xử lý hàng loạt
+    batch_data = st.session_state.get("batch_results")
+    if batch_data:
+        b_results = batch_data["results"]
+        total_time = batch_data["total_time"]
+        success_count = sum(1 for r in b_results if r["status"] == "Thành công")
+        total_pages_all = sum(r["pages_processed"] for r in b_results)
+        valid_confs = [r["confidence"] for r in b_results if r["status"] == "Thành công" and r["confidence"] > 0]
+        avg_batch_conf = round(sum(valid_confs) / len(valid_confs), 1) if valid_confs else 100.0
+
+        st.markdown("---")
+        st.success(f"🎉 **Đã hoàn thành xử lý hàng loạt!** Thành công {success_count}/{total_batch_files} file.")
+
+        # Thẻ KPI Hàng loạt
+        st.markdown(f"""
+        <div class="kpi-container-4">
+            <div class="kpi-card">
+                <div class="kpi-num">{success_count} / {total_batch_files}</div>
+                <div class="kpi-title">File thành công</div>
+            </div>
+            <div class="kpi-card">
+                <div class="kpi-num">{total_pages_all}</div>
+                <div class="kpi-title">Tổng số trang</div>
+            </div>
+            <div class="kpi-card">
+                <div class="kpi-num">{avg_batch_conf}%</div>
+                <div class="kpi-title">Độ tin cậy TB</div>
+            </div>
+            <div class="kpi-card">
+                <div class="kpi-num">{total_time}s</div>
+                <div class="kpi-title">Tổng thời gian</div>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+
+        # Nút tải trọn bộ Master ZIP
+        if batch_data.get("master_zip_bytes"):
+            st.download_button(
+                label=f"📦 TẢI TRỌN BỘ TẤT CẢ FILE ({success_count} FILE ĐÃ XỬ LÝ) (.ZIP)",
+                data=batch_data["master_zip_bytes"],
+                file_name=f"pdf_vision_batch_{datetime.now().strftime('%Y%m%d_%H%M%S')}.zip",
+                mime="application/zip",
+                type="primary",
+                use_container_width=True
+            )
+            st.markdown("<br>", unsafe_allow_html=True)
+
+        # Bảng thống kê chi tiết
+        st.markdown("##### 📋 Danh sách kết quả từng file:")
+        df_batch = pd.DataFrame([{
+            "Tên file": r["name"],
+            "Dung lượng": f"{r['size_kb']} KB",
+            "Số trang": r["pages_processed"],
+            "Phương thức": "Digital" if r["mode_used"] == "digital" else ("OCR Vision" if r["mode_used"] == "ocr" else r["mode_used"]),
+            "Độ tin cậy": f"{r['confidence']}%",
+            "Thời gian": f"{r['elapsed']}s",
+            "Trạng thái": r["status"]
+        } for r in b_results])
+        st.dataframe(df_batch, use_container_width=True)
+
+        # Accordion tải từng file riêng
+        st.markdown("##### 📁 Tải về hoặc xem trước từng file lẻ:")
+        for res in b_results:
+            b_name = res["base_name"]
+            with st.expander(f"📄 {res['name']} — Trạng thái: {res['status']} ({res['pages_processed']} trang)", expanded=False):
+                if res["status"] == "Thành công":
+                    fb = res["file_bytes"]
+                    bc1, bc2, bc3, bc4 = st.columns(4)
+                    
+                    if "docx" in fb:
+                        bc1.download_button(
+                            label="📄 Word (.docx)",
+                            data=fb["docx"],
+                            file_name=f"{b_name}.docx",
+                            mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                            key=f"dl_docx_{b_name}",
+                            use_container_width=True
+                        )
+                    if "xlsx" in fb:
+                        bc2.download_button(
+                            label="📊 Excel (.xlsx)",
+                            data=fb["xlsx"],
+                            file_name=f"{b_name}.xlsx",
+                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                            key=f"dl_xlsx_{b_name}",
+                            use_container_width=True
+                        )
+                    if "pdf" in fb:
+                        bc3.download_button(
+                            label="🔍 Searchable PDF",
+                            data=fb["pdf"],
+                            file_name=f"{b_name}_searchable.pdf",
+                            mime="application/pdf",
+                            key=f"dl_pdf_{b_name}",
+                            use_container_width=True
+                        )
+                    if "md" in fb:
+                        bc4.download_button(
+                            label="📝 Markdown (.md)",
+                            data=fb["md"],
+                            file_name=f"{b_name}.md",
+                            mime="text/markdown",
+                            key=f"dl_md_{b_name}",
+                            use_container_width=True
+                        )
+
+                    # Xem trước text nếu có
+                    if res.get("pages"):
+                        st.caption("Xem trước nội dung trích xuất:")
+                        sample_txt = "\n\n".join(res["pages"][0].get("paragraphs", []))
+                        st.text_area(
+                            f"Trang 1 của {res['name']}",
+                            value=sample_txt[:1000] + ("..." if len(sample_txt) > 1000 else ""),
+                            height=120,
+                            key=f"txt_prev_{b_name}"
+                        )
+                else:
+                    st.error(res["status"])
