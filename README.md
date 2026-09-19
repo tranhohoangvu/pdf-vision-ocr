@@ -1,8 +1,8 @@
-# 📄 PDF Vision OCR - Chuyển đổi PDF sang Word
+# ⚡ PDF Vision OCR - Chuyển đổi & Trích xuất PDF Đa Định Dạng
 
 ![PDF Vision OCR](assets/thumbnail.png)
 
-Ứng dụng nhận diện ký tự quang học (OCR) thông minh, chuyển đổi tài liệu PDF quét (scanned PDF) và tài liệu dạng ảnh tiếng Việt sang file Microsoft Word (`.docx`) có thể chỉnh sửa được.
+Ứng dụng nhận diện ký tự quang học (OCR) thông minh, chuyển đổi và trích xuất tài liệu PDF tiếng Việt (kể cả PDF scan & chụp ảnh) sang **Word (.docx)**, **Excel (.xlsx)**, **Searchable PDF (.pdf)** và **Markdown (.md)** với khả năng bảo toàn 100% tiếng Việt có dấu và cấu trúc bảng biểu.
 
 ---
 
