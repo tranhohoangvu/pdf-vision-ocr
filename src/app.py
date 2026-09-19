@@ -16,13 +16,13 @@ from core.ocr_engine import OCREngine, HAS_PYMUPDF, HAS_PDF2DOCX
 
 # Cấu hình giao diện
 st.set_page_config(
-    page_title="PDF Vision OCR - Chuyển đổi PDF sang Word",
+    page_title="PDF Vision OCR - Đa Năng",
     page_icon="⚡",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
-# Custom CSS tương thích 100% Dark Mode & Streamlit Theme
+# Custom CSS tương thích 100% Dark Mode & Inter/Geist Typography
 st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Geist:wght@300;400;500;600;700;800&display=swap');
@@ -35,25 +35,25 @@ st.markdown("""
         -moz-osx-font-smoothing: grayscale;
     }
 
-    /* Ẩn các nút rườm rà mặc định */
+    /* Ẩn các nút thừa của Streamlit */
     #MainMenu, footer, header, .stDeployButton {
         display: none !important;
     }
 
     /* Tiêu đề ứng dụng */
     .app-header {
-        padding: 1.5rem 0 1rem 0;
+        padding: 1.2rem 0 0.8rem 0;
         border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-        margin-bottom: 1.8rem;
+        margin-bottom: 1.5rem;
     }
     .app-title {
-        font-size: 2rem;
+        font-size: 1.9rem;
         font-weight: 800;
         color: #F8FAFC;
         margin: 0;
         display: flex;
         align-items: center;
-        gap: 12px;
+        gap: 10px;
     }
     .app-title span {
         color: #3B82F6;
@@ -61,18 +61,18 @@ st.markdown("""
     .app-desc {
         color: #94A3B8;
         font-size: 0.95rem;
-        margin-top: 0.35rem;
+        margin-top: 0.25rem;
     }
 
     /* Hộp thông báo nhận diện */
     .alert-box {
-        padding: 0.9rem 1.2rem;
+        padding: 0.85rem 1.1rem;
         border-radius: 10px;
-        margin-bottom: 1.5rem;
+        margin-bottom: 1.2rem;
         display: flex;
         align-items: center;
         gap: 12px;
-        font-size: 0.95rem;
+        font-size: 0.92rem;
         line-height: 1.5;
     }
     .alert-digital {
@@ -97,30 +97,22 @@ st.markdown("""
         background: #111827;
         border: 1px solid rgba(255, 255, 255, 0.08);
         border-radius: 12px;
-        padding: 1.1rem;
+        padding: 1rem;
         text-align: center;
         border-top: 3px solid #3B82F6;
     }
     .kpi-num {
-        font-size: 1.8rem;
+        font-size: 1.7rem;
         font-weight: 800;
         color: #F8FAFC;
     }
     .kpi-title {
-        font-size: 0.8rem;
+        font-size: 0.78rem;
         font-weight: 600;
         color: #94A3B8;
         text-transform: uppercase;
         letter-spacing: 0.05em;
         margin-top: 0.25rem;
-    }
-
-    /* Vùng preview trang PDF */
-    .preview-box {
-        background: #111827;
-        border: 1px solid rgba(255, 255, 255, 0.08);
-        border-radius: 12px;
-        padding: 1rem;
     }
 
     /* Tinh chỉnh nút Primary */
@@ -143,7 +135,7 @@ def get_ocr_engine(lang: str = "vi"):
 
 # --- SIDEBAR ---
 with st.sidebar:
-    st.markdown("### ⚙️ Cấu hình")
+    st.markdown("### ⚙️ Chế độ & Ngôn ngữ")
     
     conversion_mode = st.selectbox(
         "Chế độ chuyển đổi:",
@@ -165,12 +157,51 @@ with st.sidebar:
     )
     
     engine = get_ocr_engine(lang=lang_choice)
+
+    st.markdown("---")
+    st.markdown("### 📦 Định dạng đầu ra")
+    
+    selected_formats = st.multiselect(
+        "Chọn định dạng xuất:",
+        options=["docx", "xlsx", "pdf", "md"],
+        default=["docx"],
+        format_func=lambda x: {
+            "docx": "📄 Word (.docx)",
+            "xlsx": "📊 Excel (.xlsx)",
+            "pdf": "🔍 Searchable PDF (.pdf)",
+            "md": "📝 Markdown (.md)"
+        }[x],
+        help="Có thể chọn nhiều định dạng cùng lúc để tải về trọn bộ."
+    )
+    if not selected_formats:
+        selected_formats = ["docx"]
     
     st.markdown("---")
-    st.markdown("### 📐 Tùy chọn xử lý")
+    st.markdown("### 🖼️ Tiền xử lý ảnh (OpenCV)")
+    
+    deskew = st.toggle(
+        "Tự động xoay thẳng (Deskew)",
+        value=False,
+        help="Phát hiện và xoay thẳng văn bản nếu tài liệu scan/chụp bị nghiêng góc."
+    )
+    
+    remove_shadow = st.toggle(
+        "Khử bóng râm & Tẩy nền",
+        value=False,
+        help="Loại bỏ bóng tay, bóng tối khi chụp tài liệu bằng camera điện thoại."
+    )
+    
+    enhance_contrast = st.toggle(
+        "Tăng tương phản nét chữ",
+        value=False,
+        help="Tăng độ đậm nét cho chữ mờ hoặc mực nhạt bằng thuật toán CLAHE."
+    )
+
+    st.markdown("---")
+    st.markdown("### 📐 Cấu hình trang & Dàn dòng")
     
     dpi_option = st.select_slider(
-        "Độ nét render ảnh (DPI):",
+        "Độ phân giải quét (DPI):",
         options=[150, 200, 300],
         value=200,
         help="150: Nhanh | 200: Chuẩn | 300: Sắc nét cho tài liệu mờ"
@@ -196,19 +227,17 @@ with st.sidebar:
         )
 
     st.markdown("---")
-    st.caption("⚡ **Render:** PyMuPDF")
-    st.caption("📊 **Word Engine:** pdf2docx & python-docx")
-    st.caption("🤖 **OCR Model:** PaddleOCR 2.7.3")
+    st.caption("⚡ **Render:** PyMuPDF | 📊 **Excel:** openpyxl")
+    st.caption("🤖 **OCR:** PaddleOCR 2.7.3")
 
 # --- MAIN CONTENT ---
 st.markdown("""
 <div class="app-header">
-    <h1 class="app-title">⚡ PDF Vision <span>OCR sang Word</span></h1>
-    <div class="app-desc">Bảo toàn 100% tiếng Việt có dấu, phục hồi nguyên vẹn bảng biểu danh sách sinh viên và tài liệu scan.</div>
+    <h1 class="app-title">⚡ PDF Vision <span>OCR & Multi-Export</span></h1>
+    <div class="app-desc">Bảo toàn 100% tiếng Việt có dấu, phục hồi nguyên vẹn bảng biểu sang Word, Excel, Searchable PDF và Markdown.</div>
 </div>
 """, unsafe_allow_html=True)
 
-# Upload file
 uploaded_file = st.file_uploader(
     "Chọn hoặc kéo thả file PDF vào đây",
     type=["pdf"]
@@ -239,7 +268,7 @@ if uploaded_file is not None:
                 <span style="font-size: 1.3rem;">🎯</span>
                 <div>
                     <strong>Phát hiện tài liệu điện tử (Digital PDF):</strong> Có sẵn ~{char_count:,} ký tự. 
-                    Hệ thống sẽ giữ <strong>100% tiếng Việt có dấu</strong> và <strong>nguyên vẹn bảng biểu</strong>.
+                    Hệ thống sẽ giữ <strong>100% tiếng Việt có dấu</strong> và <strong>nguyên vẹn bảng biểu</strong> khi xuất Word/Excel.
                 </div>
             </div>
             """, unsafe_allow_html=True)
@@ -249,12 +278,11 @@ if uploaded_file is not None:
                 <span style="font-size: 1.3rem;">📷</span>
                 <div>
                     <strong>Phát hiện tài liệu dạng ảnh scan:</strong> Không tìm thấy lớp text số. 
-                    Hệ thống sẽ quét bằng mô hình <strong>PaddleOCR Vision</strong>.
+                    Hệ thống sẽ áp dụng <strong>PaddleOCR Vision</strong> kết hợp bộ lọc xử lý ảnh.
                 </div>
             </div>
             """, unsafe_allow_html=True)
 
-        # Giao diện chia 2 cột cân đối
         col_preview, col_action = st.columns([1, 1], gap="medium")
 
         with col_preview:
@@ -276,7 +304,10 @@ if uploaded_file is not None:
             preview_imgs = engine.render_pdf_to_images(
                 pdf_path=input_pdf_path,
                 dpi=120,
-                page_indices=[preview_page - 1]
+                page_indices=[preview_page - 1],
+                deskew=deskew,
+                remove_shadow=remove_shadow,
+                enhance_contrast=enhance_contrast
             )
             if preview_imgs:
                 st.image(
@@ -286,20 +317,16 @@ if uploaded_file is not None:
                 )
 
         with col_action:
-            st.markdown("##### 🚀 Tiến hành chuyển đổi")
+            st.markdown("##### 🚀 Tiến hành xử lý & Xuất file")
             
             pages_count = len(target_page_indices)
-            st.write(f"Số trang được chọn xử lý: **{pages_count}** / {total_pages} trang.")
+            st.write(f"Số trang được chọn: **{pages_count}** / {total_pages} trang.")
             
-            mode_desc = {
-                "auto": "Tự động (Ưu tiên bảo toàn dấu & bảng)",
-                "digital": "Trích xuất kỹ thuật số (100% có dấu)",
-                "ocr": "Quét ma trận ảnh (PaddleOCR)"
-            }[conversion_mode]
-            st.info(f"Chế độ: **{mode_desc}**")
+            format_labels = [f".{fmt.upper()}" for fmt in selected_formats]
+            st.info(f"Định dạng xuất: **{', '.join(format_labels)}**")
 
             # Nút bấm chuyển đổi
-            start_btn = st.button("🚀 Bắt đầu chuyển đổi sang Word", type="primary", use_container_width=True)
+            start_btn = st.button("🚀 Bắt đầu chuyển đổi ngay", type="primary", use_container_width=True)
 
             if start_btn:
                 progress_bar = st.progress(0)
@@ -310,7 +337,7 @@ if uploaded_file is not None:
                         progress_bar.progress(current / total)
                     status_placeholder.info(f"⏳ {msg}")
 
-                with st.spinner("Đang chuyển đổi tài liệu sang Word..."):
+                with st.spinner("Đang xử lý tài liệu và khởi tạo các định dạng xuất..."):
                     try:
                         result = engine.convert_pdf_to_word(
                             pdf_path=input_pdf_path,
@@ -319,19 +346,20 @@ if uploaded_file is not None:
                             dpi=dpi_option,
                             page_indices=target_page_indices,
                             merge_paragraphs=merge_paragraphs,
+                            export_formats=selected_formats,
+                            deskew=deskew,
+                            remove_shadow=remove_shadow,
+                            enhance_contrast=enhance_contrast,
                             progress_callback=on_progress
                         )
                         
                         status_placeholder.empty()
                         progress_bar.progress(1.0)
                         
-                        mode_title = "Trích xuất kỹ thuật số (100% có dấu & giữ bảng)" if result.get("mode_used") == "digital" else "PaddleOCR Vision"
+                        mode_title = "Trích xuất số (100% có dấu & giữ bảng)" if result.get("mode_used") == "digital" else "PaddleOCR Vision"
                         st.success(f"🎉 **Hoàn thành!** Phương thức: {mode_title}")
 
-                        with open(output_docx_path, "rb") as f:
-                            docx_bytes = f.read()
-
-                        # KPI Cards đồng bộ theme tối
+                        # Thẻ KPI
                         st.markdown(f"""
                         <div class="kpi-container">
                             <div class="kpi-card">
@@ -349,17 +377,68 @@ if uploaded_file is not None:
                         </div>
                         """, unsafe_allow_html=True)
 
-                        # Nút Download
-                        st.download_button(
-                            label="⬇️ TẢI XUỐNG FILE WORD (.DOCX)",
-                            data=docx_bytes,
-                            file_name=uploaded_file.name.rsplit(".", 1)[0] + ".docx",
-                            mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-                            type="primary",
-                            use_container_width=True
-                        )
+                        # KHU VỰC TẢI XUỐNG CÁC ĐỊNH DẠNG
+                        st.markdown("##### 📥 Tải xuống kết quả:")
+                        output_files = result.get("output_files", {})
+                        base_file_name = uploaded_file.name.rsplit(".", 1)[0]
 
-                        # Tabs xem trước
+                        # Nút tải gói ZIP nếu có nhiều file
+                        if "zip" in output_files and os.path.exists(output_files["zip"]):
+                            with open(output_files["zip"], "rb") as zf:
+                                st.download_button(
+                                    label="📦 TẢI TRỌN BỘ TẤT CẢ ĐỊNH DẠNG (.ZIP)",
+                                    data=zf.read(),
+                                    file_name=f"{base_file_name}_bundle.zip",
+                                    mime="application/zip",
+                                    type="primary",
+                                    use_container_width=True
+                                )
+                            st.markdown("<br>", unsafe_allow_html=True)
+
+                        # Các nút tải riêng theo định dạng
+                        dl_col1, dl_col2 = st.columns(2)
+                        
+                        if "docx" in output_files and os.path.exists(output_files["docx"]):
+                            with open(output_files["docx"], "rb") as f:
+                                dl_col1.download_button(
+                                    label="📄 Tải file Word (.docx)",
+                                    data=f.read(),
+                                    file_name=f"{base_file_name}.docx",
+                                    mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                                    use_container_width=True
+                                )
+
+                        if "xlsx" in output_files and os.path.exists(output_files["xlsx"]):
+                            with open(output_files["xlsx"], "rb") as f:
+                                dl_col2.download_button(
+                                    label="📊 Tải bảng tính Excel (.xlsx)",
+                                    data=f.read(),
+                                    file_name=f"{base_file_name}.xlsx",
+                                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                                    use_container_width=True
+                                )
+
+                        if "pdf" in output_files and os.path.exists(output_files["pdf"]):
+                            with open(output_files["pdf"], "rb") as f:
+                                dl_col1.download_button(
+                                    label="🔍 Tải Searchable PDF (.pdf)",
+                                    data=f.read(),
+                                    file_name=f"{base_file_name}_searchable.pdf",
+                                    mime="application/pdf",
+                                    use_container_width=True
+                                )
+
+                        if "md" in output_files and os.path.exists(output_files["md"]):
+                            with open(output_files["md"], "rb") as f:
+                                dl_col2.download_button(
+                                    label="📝 Tải tài liệu Markdown (.md)",
+                                    data=f.read(),
+                                    file_name=f"{base_file_name}.md",
+                                    mime="text/markdown",
+                                    use_container_width=True
+                                )
+
+                        # Tabs xem trước nội dung
                         tab_text, tab_meta = st.tabs(["📝 Xem trước văn bản", "📊 Chi tiết trang"])
 
                         with tab_text:
