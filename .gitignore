@@ -1,0 +1,17 @@
+# Môi trường ảo
+.venv/
+venv/
+env/
+
+# File tạm của Python
+__pycache__/
+*.pyc
+
+# Dữ liệu test local
+workspace/
+*.pdf
+*.docx
+
+# Log và model tải về của PaddleOCR
+.paddleocr/
+*.log
