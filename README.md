@@ -1,5 +1,7 @@
 # 📄 PDF Vision OCR - Chuyển đổi PDF sang Word
 
+![PDF Vision OCR](assets/thumbnail.png)
+
 Ứng dụng nhận diện ký tự quang học (OCR) thông minh, chuyển đổi tài liệu PDF quét (scanned PDF) và tài liệu dạng ảnh tiếng Việt sang file Microsoft Word (`.docx`) có thể chỉnh sửa được.
 
 ---
@@ -69,6 +71,8 @@ Truy cập giao diện tại: `http://localhost:8501`.
 
 ```text
 pdf-vision-ocr/
+├── assets/
+│   └── thumbnail.png          # Ảnh xem trước giao diện dự án
 ├── src/
 │   ├── core/
 │   │   ├── __init__.py
