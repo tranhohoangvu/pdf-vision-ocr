@@ -1,11 +1,15 @@
+import os
 import sys
+
+os.environ["PYMUPDF_SUGGEST_LAYOUT_ANALYZER"] = "0"
+
 try:
     import pymupdf
     sys.modules['fitz'] = pymupdf
+    if hasattr(pymupdf, 'no_recommend_layout'):
+        pymupdf.no_recommend_layout()
 except ImportError:
     pass
-
-import os
 import tempfile
 import streamlit as st
 import pandas as pd

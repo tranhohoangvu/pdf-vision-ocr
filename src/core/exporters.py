@@ -7,9 +7,13 @@ from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
 
 import sys
+os.environ["PYMUPDF_SUGGEST_LAYOUT_ANALYZER"] = "0"
+
 try:
     import pymupdf as fitz
     sys.modules['fitz'] = fitz
+    if hasattr(fitz, 'no_recommend_layout'):
+        fitz.no_recommend_layout()
 except ImportError:
     pass
 

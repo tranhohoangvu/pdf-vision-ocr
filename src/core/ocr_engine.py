@@ -8,10 +8,13 @@ from docx import Document
 from paddleocr import PaddleOCR
 
 import sys
+os.environ["PYMUPDF_SUGGEST_LAYOUT_ANALYZER"] = "0"
 
 try:
     import pymupdf as fitz
     sys.modules['fitz'] = fitz
+    if hasattr(fitz, 'no_recommend_layout'):
+        fitz.no_recommend_layout()
     HAS_PYMUPDF = True
 except ImportError:
     HAS_PYMUPDF = False
