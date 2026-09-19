@@ -9,6 +9,7 @@
 ## ✨ Tính năng nổi bật
 
 - **Bảo toàn 100% tiếng Việt có dấu & Bảng biểu**: Tự động phát hiện Digital PDF và chuyển đổi giữ nguyên cấu trúc bảng và toàn bộ dấu tiếng Việt từ tài liệu gốc.
+- **Tích hợp Vision AI (Google Gemini Flash)**: Nhận diện chữ viết tay, hóa đơn mờ hoặc tài liệu phức tạp với mô hình Google Gemini 2.5 Flash, tự động sửa lỗi chính tả ngữ cảnh tiếng Việt và tự động fallback về PaddleOCR nếu mất mạng/hết quota.
 - **Xử lý hàng loạt (Batch Processing & Master ZIP)**: Tải lên nhiều file PDF cùng lúc, tự động xử lý tuần tự, cung cấp bảng thống kê chi tiết từng file và đóng gói toàn bộ kết quả vào một file Master ZIP có cấu trúc thư mục rõ ràng kèm báo cáo tổng kết (`batch_summary.txt`).
 - **Tiền xử lý ảnh thông minh (OpenCV)**:
   - **Tự động xoay thẳng (Auto-Deskew)**: Tự phát hiện góc nghiêng và xoay thẳng văn bản về 0°.
@@ -99,3 +100,4 @@ pdf-vision-ocr/
 
 1. **Đối với tài liệu mờ, chữ nhỏ**: Trong thanh bên (Sidebar), chọn chất lượng **300 DPI** để tăng cường độ nét của ảnh trước khi đưa vào mô hình OCR.
 2. **Đối với tài liệu nhiều trang**: Bạn có thể xử lý thử một vài trang đầu (ví dụ nhập `1-2` vào ô "Trang tùy chọn") để kiểm tra độ chính xác trước khi chuyển đổi toàn bộ tài liệu.
+3. **Đối với chữ viết tay hoặc scan siêu khó**: Chọn chế độ **✨ Google Gemini Flash (Vision AI)** và dán API Key miễn phí từ [Google AI Studio](https://aistudio.google.com/app/apikey) để nhận diện chính xác từng nét chữ và bảng biểu phức tạp.

@@ -181,6 +181,42 @@ class SearchablePdfExporter:
         doc.close()
         return True
 
+    @classmethod
+    def create_searchable_pdf_from_text(
+        cls,
+        pdf_path: str,
+        output_pdf_path: str,
+        page_texts: dict,
+        page_indices: list = None
+    ) -> bool:
+        """
+        Tạo Searchable PDF từ văn bản phân đoạn của các mô hình Vision AI (như Gemini).
+        page_texts: {page_num: text_content}
+        """
+        doc = fitz.open(pdf_path)
+        total_pages = len(doc)
+        target_indices = page_indices if page_indices is not None else list(range(total_pages))
+
+        for idx in target_indices:
+            if 0 <= idx < total_pages:
+                page_num = idx + 1
+                text = page_texts.get(page_num, "").strip()
+                if text:
+                    page = doc[idx]
+                    try:
+                        page.insert_textbox(
+                            page.rect,
+                            text,
+                            fontsize=9.0,
+                            render_mode=3
+                        )
+                    except Exception:
+                        pass
+
+        doc.save(output_pdf_path)
+        doc.close()
+        return True
+
 
 class MarkdownExporter:
     """

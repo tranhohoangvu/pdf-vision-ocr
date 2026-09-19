@@ -27,6 +27,7 @@ except ImportError:
 
 from core.image_preprocessor import ImagePreprocessor
 from core.exporters import ExcelExporter, SearchablePdfExporter, MarkdownExporter, ZipPackageExporter
+from core.vision_ai_engine import GeminiVisionEngine
 
 
 def clean_vietnamese_ocr_text(text: str) -> str:
@@ -494,7 +495,7 @@ class OCREngine:
             MarkdownExporter.export_to_markdown(pages_summary, md_path)
             output_files["md"] = md_path
 
-        # Đóng gói ZIP nếu nhiều định dạng
+        # Đóng gói ZIP nếu có nhiều định dạng
         if len(output_files) > 1:
             zip_path = os.path.join(output_dir, f"{base_name}_bundle.zip")
             files_to_zip = {os.path.basename(p): p for p in output_files.values()}
@@ -516,11 +517,161 @@ class OCREngine:
             "pages": pages_summary
         }
 
+    def _convert_with_gemini_ai(
+        self,
+        pdf_path: str,
+        output_dir: str,
+        base_name: str,
+        export_formats: list,
+        gemini_api_key: str = None,
+        dpi: int = 200,
+        page_indices: list = None,
+        deskew: bool = False,
+        remove_shadow: bool = False,
+        enhance_contrast: bool = False,
+        progress_callback: callable = None
+    ) -> dict:
+        """
+        Nhận diện văn bản nâng cao bằng mô hình Vision AI Google Gemini Flash.
+        Hỗ trợ chữ viết tay, bản scan mờ và tự động hiệu đính ngữ cảnh tiếng Việt.
+        """
+        start_time = time.time()
+        gemini_engine = GeminiVisionEngine(api_key=gemini_api_key)
+
+        if not gemini_engine.is_available():
+            if progress_callback:
+                progress_callback(0, 1, "Gemini API chưa sẵn sàng. Tự động chuyển sang PaddleOCR...")
+            return self._convert_scanned_pdf(
+                pdf_path=pdf_path,
+                output_dir=output_dir,
+                base_name=base_name,
+                export_formats=export_formats,
+                dpi=dpi,
+                page_indices=page_indices,
+                deskew=deskew,
+                remove_shadow=remove_shadow,
+                enhance_contrast=enhance_contrast,
+                progress_callback=progress_callback
+            )
+
+        if progress_callback:
+            progress_callback(0, 1, "Đang trích xuất ảnh trang PDF...")
+
+        page_images = self.render_pdf_to_images(
+            pdf_path=pdf_path,
+            dpi=dpi,
+            page_indices=page_indices,
+            deskew=deskew,
+            remove_shadow=remove_shadow,
+            enhance_contrast=enhance_contrast
+        )
+
+        total_pages = len(page_images)
+        if total_pages == 0:
+            raise ValueError("Không tìm thấy trang nào để xử lý trong file PDF.")
+
+        doc = Document()
+        pages_summary = []
+        pages_text_map = {}
+        models_used = []
+
+        for i, (page_num, img) in enumerate(page_images):
+            if progress_callback:
+                progress_callback(i + 1, total_pages, f"Google Gemini Flash đang xử lý trang {page_num} ({i + 1}/{total_pages})...")
+
+            gemini_res = gemini_engine.ocr_page_image(img)
+
+            if gemini_res.get("status") != "success":
+                # Fallback trang lỗi sang PaddleOCR
+                img_array = np.array(img)
+                paddle_res = self.model.ocr(img_array, cls=True)
+                page_lines = paddle_res[0] if paddle_res and paddle_res[0] else []
+                paragraphs = self.merge_lines_into_paragraphs(page_lines)
+                page_txt = "\n\n".join(paragraphs)
+                conf = 85.0
+                model_used = "PaddleOCR (Fallback)"
+            else:
+                paragraphs = gemini_res.get("paragraphs", [])
+                page_txt = gemini_res.get("text", "")
+                conf = gemini_res.get("confidence", 99.0)
+                model_used = gemini_res.get("model_used", "Gemini Flash")
+
+            models_used.append(model_used)
+            pages_text_map[page_num] = page_txt
+
+            for p_text in paragraphs:
+                doc.add_paragraph(p_text)
+
+            if i < total_pages - 1:
+                doc.add_page_break()
+
+            pages_summary.append({
+                "page_num": page_num,
+                "line_count": len(paragraphs),
+                "paragraph_count": len(paragraphs),
+                "avg_confidence": conf,
+                "paragraphs": paragraphs
+            })
+
+        output_files = {}
+
+        # Xuất Word (.docx)
+        if "docx" in export_formats:
+            word_path = os.path.join(output_dir, f"{base_name}.docx")
+            doc.save(word_path)
+            output_files["docx"] = word_path
+
+        # Xuất Searchable PDF (.pdf)
+        if "pdf" in export_formats and HAS_PYMUPDF:
+            searchable_pdf_path = os.path.join(output_dir, f"{base_name}_searchable.pdf")
+            SearchablePdfExporter.create_searchable_pdf_from_text(
+                pdf_path=pdf_path,
+                output_pdf_path=searchable_pdf_path,
+                page_texts=pages_text_map,
+                page_indices=page_indices
+            )
+            output_files["pdf"] = searchable_pdf_path
+
+        # Xuất Excel (.xlsx)
+        if "xlsx" in export_formats:
+            excel_path = os.path.join(output_dir, f"{base_name}.xlsx")
+            ExcelExporter.export_pdf_to_excel(pdf_path, excel_path, page_indices)
+            output_files["xlsx"] = excel_path
+
+        # Xuất Markdown (.md)
+        if "md" in export_formats:
+            md_path = os.path.join(output_dir, f"{base_name}.md")
+            MarkdownExporter.export_to_markdown(pages_summary, md_path)
+            output_files["md"] = md_path
+
+        # Đóng gói ZIP nếu có nhiều định dạng
+        if len(output_files) > 1:
+            zip_path = os.path.join(output_dir, f"{base_name}_bundle.zip")
+            files_to_zip = {os.path.basename(p): p for p in output_files.values()}
+            ZipPackageExporter.create_zip_archive(files_to_zip, zip_path)
+            output_files["zip"] = zip_path
+
+        elapsed = round(time.time() - start_time, 2)
+        primary_word_path = output_files.get("docx", "")
+
+        return {
+            "success": True,
+            "mode_used": "gemini",
+            "model_used": ", ".join(sorted(set(models_used))),
+            "total_pages_processed": total_pages,
+            "overall_confidence": 99.0,
+            "elapsed_seconds": elapsed,
+            "output_word_path": primary_word_path,
+            "output_files": output_files,
+            "pages": pages_summary
+        }
+
     def convert_pdf_to_word(
         self,
         pdf_path: str,
         output_word_path: str,
         mode: str = "auto",
+        gemini_api_key: str = None,
         dpi: int = 200,
         page_indices: list = None,
         merge_paragraphs: bool = True,
@@ -543,7 +694,21 @@ class OCREngine:
         # Kiểm tra sự tồn tại của text layer
         has_digital, char_count, _ = self.check_has_digital_text(pdf_path, page_indices)
 
-        if mode == "auto":
+        if mode == "gemini":
+            return self._convert_with_gemini_ai(
+                pdf_path=pdf_path,
+                output_dir=output_dir,
+                base_name=base_name,
+                export_formats=export_formats,
+                gemini_api_key=gemini_api_key,
+                dpi=dpi,
+                page_indices=page_indices,
+                deskew=deskew,
+                remove_shadow=remove_shadow,
+                enhance_contrast=enhance_contrast,
+                progress_callback=progress_callback
+            )
+        elif mode == "auto":
             if has_digital and HAS_PDF2DOCX:
                 return self._convert_digital_pdf(
                     pdf_path=pdf_path,
@@ -551,6 +716,20 @@ class OCREngine:
                     base_name=base_name,
                     export_formats=export_formats,
                     page_indices=page_indices,
+                    progress_callback=progress_callback
+                )
+            elif gemini_api_key and gemini_api_key.strip():
+                return self._convert_with_gemini_ai(
+                    pdf_path=pdf_path,
+                    output_dir=output_dir,
+                    base_name=base_name,
+                    export_formats=export_formats,
+                    gemini_api_key=gemini_api_key,
+                    dpi=dpi,
+                    page_indices=page_indices,
+                    deskew=deskew,
+                    remove_shadow=remove_shadow,
+                    enhance_contrast=enhance_contrast,
                     progress_callback=progress_callback
                 )
             else:

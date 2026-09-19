@@ -165,14 +165,15 @@ with st.sidebar:
     
     conversion_mode = st.selectbox(
         "Chế độ chuyển đổi:",
-        options=["auto", "digital", "ocr"],
+        options=["auto", "digital", "gemini", "ocr"],
         format_func=lambda x: {
             "auto": "⚡ Tự động (Smart Hybrid)",
             "digital": "📑 Giữ nguyên bản (100% có dấu)",
+            "gemini": "✨ Google Gemini Flash (Vision AI)",
             "ocr": "🤖 Quét quang học (PaddleOCR)"
         }[x],
         index=0,
-        help="Tự động: Giữ 100% dấu & bảng biểu nếu file có text layer, tự chuyển OCR nếu là ảnh scan."
+        help="Tự động: Giữ 100% dấu & bảng biểu nếu file có text layer, tự chuyển sang Gemini Vision AI hoặc PaddleOCR nếu là ảnh scan."
     )
     
     lang_choice = st.selectbox(
@@ -226,11 +227,13 @@ with st.sidebar:
     st.markdown("---")
     st.markdown("### 📐 Cấu hình trang & Dàn dòng")
     
+    # Khi dùng Gemini, tự đẹt DPI cao hơn cho chữ viết tay
+    _default_dpi = 300 if conversion_mode == "gemini" else 200
     dpi_option = st.select_slider(
         "Độ phân giải quét (DPI):",
         options=[150, 200, 300],
-        value=200,
-        help="150: Nhanh | 200: Chuẩn | 300: Sắc nét cho tài liệu mờ"
+        value=_default_dpi,
+        help="150: Nhanh | 200: Chuẩn | 300: Sắc nét (bắt buộc với chữ viết tay & Gemini)"
     )
     
     merge_paragraphs = st.toggle(
@@ -253,18 +256,21 @@ with st.sidebar:
         )
 
     st.markdown("---")
-    with st.expander("✨ Vision AI (Google Gemini)", expanded=False):
+    with st.expander("✨ Vision AI (Google Gemini)", expanded=(conversion_mode == "gemini")):
         gemini_api_key = st.text_input(
             "Gemini API Key:",
             type="password",
             placeholder="AIzaSy...",
-            help="Cung cấp API Key để xử lý chữ viết tay & tài liệu siêu khó (Giai đoạn tiếp theo)."
+            help="Cung cấp API Key để nhận diện chữ viết tay & tài liệu siêu khó với Google Gemini 2.5 Flash."
         )
         st.markdown("[🔑 Lấy Google Gemini API Key miễn phí](https://aistudio.google.com/app/apikey)")
         if gemini_api_key:
             st.success("🟢 Đã nạp Gemini Key (Sẵn sàng)")
         else:
-            st.caption("Chế độ hiện tại: Offline Local Engine (PaddleOCR & PyMuPDF)")
+            if conversion_mode == "gemini":
+                st.warning("⚠️ Vui lòng nhập API Key để dùng chế độ Gemini.")
+            else:
+                st.caption("Chế độ hiện tại: Offline Local Engine (PaddleOCR & PyMuPDF)")
 
     st.markdown("---")
     if st.button("🔄 Đặt lại toàn bộ (Reset)", use_container_width=True, help="Xóa mọi tệp tải lên và làm mới trạng thái"):
@@ -433,6 +439,7 @@ elif len(uploaded_files) == 1:
                             pdf_path=input_pdf_path,
                             output_word_path=output_docx_path,
                             mode=conversion_mode,
+                            gemini_api_key=gemini_api_key,
                             dpi=dpi_option,
                             page_indices=target_page_indices,
                             merge_paragraphs=merge_paragraphs,
@@ -459,10 +466,14 @@ elif len(uploaded_files) == 1:
                         status_placeholder.empty()
                         st.error(f"❌ Có lỗi xảy ra trong quá trình xử lý: {str(e)}")
 
-            # Hiển thị kết quả từ session state
             saved_result = st.session_state.get("single_result")
             if saved_result:
-                mode_title = "Trích xuất số (100% có dấu & giữ bảng)" if saved_result.get("mode_used") == "digital" else "PaddleOCR Vision"
+                if saved_result.get("mode_used") == "digital":
+                    mode_title = "Trích xuất số (100% có dấu & giữ bảng)"
+                elif saved_result.get("mode_used") == "gemini":
+                    mode_title = f"✨ Google Gemini Vision AI ({saved_result.get('model_used', 'Flash')})"
+                else:
+                    mode_title = "PaddleOCR Vision"
                 st.success(f"🎉 **Hoàn thành!** Phương thức: {mode_title}")
 
                 # Thẻ KPI
@@ -670,6 +681,7 @@ else:
                             pdf_path=file_input_pdf,
                             output_word_path=file_out_docx,
                             mode=conversion_mode,
+                            gemini_api_key=gemini_api_key,
                             dpi=dpi_option,
                             page_indices=target_indices,
                             merge_paragraphs=merge_paragraphs,
@@ -804,7 +816,7 @@ else:
             "Tên file": r["name"],
             "Dung lượng": f"{r['size_kb']} KB",
             "Số trang": r["pages_processed"],
-            "Phương thức": "Digital" if r["mode_used"] == "digital" else ("OCR Vision" if r["mode_used"] == "ocr" else r["mode_used"]),
+            "Phương thức": "Digital" if r["mode_used"] == "digital" else ("Gemini AI" if r["mode_used"] == "gemini" else ("OCR Vision" if r["mode_used"] == "ocr" else r["mode_used"])),
             "Độ tin cậy": f"{r['confidence']}%",
             "Thời gian": f"{r['elapsed']}s",
             "Trạng thái": r["status"]
