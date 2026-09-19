@@ -1,0 +1,30 @@
+services:
+  # ── Streamlit Web UI ─────────────────────────────────────
+  web:
+    build: .
+    image: pdf-vision-ocr:latest
+    container_name: pdf-ocr-web
+    environment:
+      APP_MODE: web
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+    ports:
+      - "8501:8501"
+    volumes:
+      - ./src:/app/src:ro   # mount source để dev hot-reload
+    restart: unless-stopped
+    profiles: [web, full]
+
+  # ── FastAPI REST API ─────────────────────────────────────
+  api:
+    build: .
+    image: pdf-vision-ocr:latest
+    container_name: pdf-ocr-api
+    environment:
+      APP_MODE: api
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./src:/app/src:ro
+    restart: unless-stopped
+    profiles: [api, full]
