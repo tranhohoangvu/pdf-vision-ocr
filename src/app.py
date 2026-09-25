@@ -37,17 +37,61 @@ st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Geist:wght@300;400;500;600;700;800&display=swap');
 
-    *, html, body, [class*="css"], [data-testid="stAppViewContainer"], [data-testid="stSidebar"], 
-    .stMarkdown, .stText, p, span, h1, h2, h3, h4, h5, h6, 
-    button, input, textarea, select, label, .stSelectbox, .stRadio, .stSlider {
+    html, body, [data-testid="stAppViewContainer"], [data-testid="stSidebar"], 
+    .stMarkdown, .stText, p, h1, h2, h3, h4, h5, h6, 
+    input, textarea, select, label {
         font-family: 'Inter', 'Geist', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
         -webkit-font-smoothing: antialiased;
         -moz-osx-font-smoothing: grayscale;
     }
 
-    /* Ẩn các nút thừa của Streamlit */
-    #MainMenu, footer, header, .stDeployButton {
+    /* Bảo vệ font icon của Streamlit không bị biến thành chữ (keyboard_double_arrow, upload) */
+    [data-testid="stIconMaterial"], 
+    .material-symbols-rounded, 
+    .material-icons,
+    [class*="material-symbols"] {
+        font-family: "Material Symbols Rounded", "Material Icons" !important;
+    }
+
+    /* Ẩn các nút thừa (Deploy, Menu 3 chấm, Watermark) */
+    #MainMenu, footer, .stDeployButton, [data-testid="stDecoration"] {
         display: none !important;
+    }
+
+    /* Đảm bảo thanh header và toolbar không bị ẩn */
+    header[data-testid="stHeader"] {
+        background: transparent !important;
+        display: block !important;
+        visibility: visible !important;
+        height: 2.875rem !important;
+    }
+
+    [data-testid="stToolbar"] {
+        display: flex !important;
+        visibility: visible !important;
+        background: transparent !important;
+    }
+
+    /* Nút mở sidebar khi bị đóng (Streamlit 1.40+ / 1.60 dùng stExpandSidebarButton) */
+    [data-testid="stExpandSidebarButton"],
+    button[data-testid="stExpandSidebarButton"],
+    [data-testid="stSidebarCollapseButton"],
+    [data-testid="collapsedControl"] {
+        display: inline-flex !important;
+        visibility: visible !important;
+        opacity: 1 !important;
+        z-index: 999999 !important;
+        background: #1e293b !important;
+        border: 1px solid rgba(255, 255, 255, 0.2) !important;
+        border-radius: 8px !important;
+        color: #60a5fa !important;
+        cursor: pointer !important;
+        padding: 4px 8px !important;
+    }
+
+    [data-testid="stExpandSidebarButton"]:hover {
+        background: #334155 !important;
+        color: #ffffff !important;
     }
 
     /* Tiêu đề ứng dụng */
